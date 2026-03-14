@@ -85,68 +85,54 @@ Automation, LangGraph.
 \section{Introduction}
 % ===========================================================================
 
-Most people today expect to get help from a business at any hour, not
-just during office hours.
-Yet phone-based customer service has not kept up: when call volumes spike,
-there are simply not enough staff to respond quickly, which leaves
-customers waiting and businesses losing opportunities~\cite{gans2003callcenters}.
-
-AI can fill this gap by handling routine questions automatically, freeing
-human agents for cases that genuinely need human judgment.
-The problem is that most AI customer-service tools today are either
-text-only chatbots or old-style phone menus (IVR systems) that follow
-a fixed script.
-Neither can hold a natural voice conversation, look up information from
-a live document, or speak in a personalised voice~\cite{manjuProgReport}.
+Most businesses today are expected to provide help around the clock, yet
+phone-based customer service often falls short during busy periods---too
+few staff, long waiting times, and frustrated
+customers~\cite{gans2003callcenters}.
+AI can fill this gap, but most current tools are either text-only chatbots
+or old-style phone menus that follow a fixed script.
+Neither can hold a natural voice conversation in Thai, look up live
+information, or adapt easily to different business
+needs~\cite{manjuProgReport}.
 
 This paper introduces \textbf{MANJU}, a voice assistant built specifically
 for Thai-language customer service.
 A customer speaks a question; MANJU transcribes it, reasons about the
 best answer, searches relevant documents for supporting facts if needed,
-and replies in a natural Thai voice --- all within five seconds.
-What sets MANJU apart is that the entire conversation logic is configured
-visually: a non-technical operator drags and drops nodes in a browser
-editor to define how queries are handled, and the system compiles that
-design into a running AI workflow automatically, with no code changes
-required.
+and replies in a natural Thai voice---all within five seconds.
+Uniquely, the entire conversation logic is configured through a visual
+drag-and-drop editor that requires no programming.
 
 \subsection{Objectives}
 
-This work has four goals.
 \begin{enumerate}[label=(\roman*)]
-    \item Build a complete pipeline --- from listening to the customer's
-          voice all the way to speaking a reply --- that responds in under
-          five seconds.
-    \item Provide a drag-and-drop editor so that non-developers can
-          configure the AI workflow, choose knowledge sources, and select
-          output formats without writing code.
-    \item Ground every answer in real documents or live spreadsheet data
-          to reduce the chance of the AI inventing incorrect information.
-    \item Test the system on Thai customer-service questions and measure
-          how fast it responds, how often it routes queries correctly, and
-          how factually accurate its answers are.
+    \item Build a complete voice-to-voice pipeline that responds in under five seconds.
+    \item Provide a drag-and-drop workflow editor requiring no programming knowledge.
+    \item Ground every answer in real documents or live data to reduce AI errors.
+    \item Evaluate routing accuracy, factual correctness, and response speed on Thai customer-service queries.
 \end{enumerate}
 
 \subsection{Scope}
-The current scope covers an MVP supporting FAQ, product information, and knowledge-base inquiries in Thai.
-Four workflow modalities are supported: text-to-text, text-to-voice, voice-to-text, and voice-to-voice.
-The scope excludes complex multi-turn stateful conversations, emotion analysis, CRM/ticketing integration, and domain-specific model fine-tuning.
-The system operates on mixed CPU/GPU resources and supports browser-based voice access~\cite{manjuProgReport}.
+The system covers FAQ, product information, and knowledge-base inquiries
+in Thai, supporting four interaction modes: text-to-text, text-to-voice,
+voice-to-text, and voice-to-voice.
+Complex multi-turn conversations, emotion analysis, CRM integration, and
+domain-specific model fine-tuning are outside the current
+scope~\cite{manjuProgReport}.
 
 \subsection{Contributions}
-The contributions of this work are four-fold:
 \begin{enumerate}[label=(\roman*)]
-    \item \textbf{Workflow-as-Data Architecture:} A visual graph editor that compiles drag-and-drop node configurations into LangGraph \texttt{StateGraph} instances with eight node types and conditional branching.
-    \item \textbf{Multi-Agent Orchestration:} LangGraph-based execution supporting intent routing, RAG enrichment, Google Sheets integration, and conditional logic within a single unified state machine.
-    \item \textbf{Thai Voice Pipeline:} Integration of Web Speech API with custom VAD for input, and Qwen3-TTS-12Hz-1.7B with sentence-level streaming and voice cloning for output.
-    \item \textbf{Production-Grade Platform:} A four-tier microservice deployment with JWT/OAuth authentication, AES-256-GCM encrypted API key management, and Azure Blob/local storage for voice assets.
+    \item \textbf{Visual Workflow Builder:} A drag-and-drop editor that lets non-technical staff design conversation flows and compile them into a running AI system without writing code.
+    \item \textbf{Multi-Agent Orchestration:} Specialised agents handle intent classification, document retrieval, live data lookup, and response generation within a single configurable pipeline.
+    \item \textbf{Thai Voice Pipeline:} End-to-end Thai voice support with real-time speech recognition, streaming synthesis, and voice cloning.
+    \item \textbf{Production-Ready Platform:} Secure four-tier deployment with user authentication, encrypted API key management, and flexible voice asset storage.
 \end{enumerate}
 
 \noindent\textbf{Paper Organization.}
 Section~\ref{sec:related} reviews related work.
-Section~\ref{sec:methodology} describes the system architecture and methodology.
-Section~\ref{sec:experiments} presents experiments and results.
-Section~\ref{sec:conclusion} concludes and outlines future work.
+Section~\ref{sec:methodology} describes the system architecture.
+Section~\ref{sec:experiments} presents results.
+Section~\ref{sec:conclusion} concludes.
 
 % ===========================================================================
 \section{Related Work}
@@ -415,98 +401,65 @@ downstream routing mistakes.
 \subsection{How the Multi-Agent System Works}
 % -------------------------------------------------------------------
 
-The central idea behind MANJU is that a workflow is treated as
-\textit{data}, not code.
-An operator designs the agent graph visually in the browser; the result is
-saved to the database as a JSON file describing nodes and the connections
-between them.
-At request time the AI orchestrator reads that JSON and builds a live,
-executable graph from it --- no redeployment needed.
-
-\subsubsection{Shared State}
-
-Every node in the graph reads from and writes to a single shared
-dictionary called \texttt{WorkflowState}.
-This is what allows, for example, a document-search node to pass its
-retrieved text to the downstream AI reasoning node.
-The dictionary holds the user's message, conversation history, any
-retrieved document passages, spreadsheet data, the final response, and
-the API key needed to call the language model.
+The central idea behind MANJU is that a conversation workflow is treated
+as a \textit{saved design}, not fixed software.
+An operator arranges building blocks visually in the browser---much like
+connecting puzzle pieces---to define how the system should handle different
+questions.
+This design is saved, and whenever a customer sends a query the system
+automatically follows the operator's intended path to produce an answer.
+No technical expertise is needed to change the behaviour: editing the
+visual layout is all that is required.
 
 \subsubsection{The Eight Building Blocks}
 
-Workflows are assembled from eight node types grouped into four
+Workflows are assembled from eight component types grouped into four
 categories, as listed in Table~\ref{tab:node_types}.
+An operator combines these to create any conversation flow---for example,
+``accept a spoken question, search the product catalogue, then speak the
+answer aloud.''
 
 \begin{table}[t]
     \centering
-    \caption{The eight node types available in the MANJU workflow editor,
-             grouped by what they do.}
+    \caption{The eight component types available in the MANJU workflow
+             editor, grouped by what they do.}
     \label{tab:node_types}
     \small
     \begin{tabular}{@{}llp{3.8cm}@{}}
         \toprule
-        \textbf{Category} & \textbf{Node} & \textbf{What it does} \\
+        \textbf{Category} & \textbf{Component} & \textbf{What it does} \\
         \midrule
         \multirow{2}{*}{Input}
-          & \texttt{text-input}  & Accepts a typed message from the user \\
-          & \texttt{voice-input} & Accepts a spoken message via the browser \\
+          & Text input   & Accepts a typed message from the user \\
+          & Voice input  & Accepts a spoken message via the browser \\
         \midrule
         \multirow{2}{*}{Processing}
-          & \texttt{ai-model}    & Sends the message to a language model
-                                   (e.g.\ GPT-4o-mini) and stores the reply \\
-          & \texttt{if-condition}& Routes the flow down different paths
-                                   depending on what the message contains \\
+          & AI model     & Asks an AI to understand the question and compose a reply \\
+          & Branch       & Sends the conversation down different paths based on what was asked \\
         \midrule
         \multirow{2}{*}{Data}
-          & \texttt{rag-documents} & Searches uploaded documents for
-                                     relevant passages \\
-          & \texttt{google-sheets} & Fetches live rows from a Google Sheet \\
+          & Documents    & Searches uploaded files for relevant information \\
+          & Google Sheets & Fetches live rows from a connected spreadsheet \\
         \midrule
         \multirow{2}{*}{Output}
-          & \texttt{text-output}  & Returns the final answer as text \\
-          & \texttt{voice-output} & Converts the answer to spoken audio \\
+          & Text output  & Returns the final answer as written text \\
+          & Voice output & Reads the answer aloud in a chosen voice \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-\subsubsection{Turning the Visual Design into a Running Graph}
+\subsubsection{From Design to Live Response}
 
-When a request arrives the orchestrator builds a runnable graph from the
-saved JSON in five steps.
-
-\begin{enumerate}[label=\arabic*.]
-    \item \textbf{Map the connections.}
-          The list of connections is parsed to find out which node feeds
-          into which, including whether a connection carries a ``true'' or
-          ``false'' branch signal.
-    \item \textbf{Register each node.}
-          Every node in the JSON gets a corresponding Python function that
-          reads the shared state, does its work, and writes its result
-          back to the state.
-    \item \textbf{Wire the edges.}
-          Conditional nodes get two outgoing edges (one for each branch);
-          all other nodes get a single forward edge.
-    \item \textbf{Choose the starting point.}
-          The system prefers an input node as the entry point; if none
-          exists it falls back to a data node such as a document search.
-    \item \textbf{Compile and run.}
-          The assembled graph is compiled into an executable instance
-          and invoked with the user's message.
-\end{enumerate}
-
-\noindent One important rule keeps the graph predictable: if a
-document-search or spreadsheet node feeds data into an AI model node,
-those two steps always run in sequence rather than in parallel, so the AI
-model always receives the retrieved context before it generates a reply.
-
-\subsubsection{Detecting the Workflow Type}
-
-Before execution the system scans the node list to decide which of four
-modes it is running in: text-in / text-out, text-in / voice-out,
-voice-in / text-out, or voice-in / voice-out.
-It also reads the voice-output node's settings to know whether to use
-OpenAI or Qwen3 for speech synthesis.
+Once a customer sends a query, the system reads the saved design and
+follows it step by step.
+Each component does its part---receiving the input, looking up relevant
+facts, asking the AI to form an answer---and passes what it has found to
+the next component in the chain.
+This ensures the final reply always draws on all the information gathered
+along the way.
+The system also automatically detects whether the conversation is
+text-based or voice-based and adjusts accordingly, so the operator does
+not need to configure this separately.
 
 % -------------------------------------------------------------------
 \subsection{How Documents Are Searched (RAG)}
