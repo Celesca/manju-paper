@@ -145,11 +145,9 @@ A typical pipeline digitizes audio, extracts acoustic features (e.g., mel-spectr
 Large-scale end-to-end models such as OpenAI Whisper~\cite{radford2022whisper} demonstrate broad multilingual robustness; however, their non-causal encoder-decoder architecture introduces fundamental limitations for streaming applications: reliance on future context, chunking artifacts that split words, overlapping re-processing overhead, and unpredictable latency from autoregressive decoding.
 
 \subsubsection{Typhoon ASR Real-Time}
-Sirichotedumrong et~al.~\cite{sirichotedumrong2026typhoonasr} recently introduced \textbf{Typhoon ASR Real-Time}, a 115M-parameter FastConformer-Transducer model~\cite{rekesh2023fastconformer} specifically engineered for low-latency Thai streaming ASR. The model addresses the critical gap in the Thai ASR landscape, which had been dominated by offline Whisper-based architectures (e.g., Pathumma-Whisper~\cite{tipaksorn2024pathumma}, Thonburian Whisper~\cite{aung2024thonburian}).
-
-Key architectural choices include: (i)~an 8$\times$ depthwise convolutional subsampling encoder that is $\sim$2.4$\times$ faster than standard Conformer~\cite{gulati2020conformer}, (ii)~a Transducer (RNN-T) decoder~\cite{graves2012sequence} enabling true frame-synchronous streaming, and (iii)~a rigorous text normalization pipeline that resolves systemic Thai transcription ambiguities such as context-dependent number verbalization and repetition markers (\textit{mai yamok}).
-
-The model was trained on $\sim$11{,}000 hours of Thai audio and evaluated on the Typhoon ASR Benchmark~\cite{sirichotedumrong2026typhoonasr}. Table~\ref{tab:typhoon_perf} summarises its key performance figures.
+Typhoon ASR Real-Time~\cite{sirichotedumrong2026typhoonasr} is a 115M-parameter FastConformer-Transducer model for low-latency Thai streaming ASR.
+Unlike offline Whisper-based models~\cite{tipaksorn2024pathumma,aung2024thonburian}, its Transducer (RNN-T) decoder enables frame-synchronous streaming without chunking latency.
+Trained on $\sim$11{,}000 hours of Thai audio, its key performance figures are shown in Table~\ref{tab:typhoon_perf}.
 
 \begin{table}[h]
     \centering
@@ -169,7 +167,7 @@ The model was trained on $\sim$11{,}000 hours of Thai audio and evaluated on the
     \end{tabular}
 \end{table}
 
-\noindent These characteristics make Typhoon ASR Real-Time the ideal candidate for server-side Thai ASR in production voice assistants like MANJU, where low latency, cost efficiency, and on-premises privacy are critical requirements. In MANJU's current MVP, we leverage the browser's Web Speech API (\texttt{webkitSpeechRecognition}) for client-side ASR, augmented with a custom energy-based VAD module; Typhoon ASR is planned as the server-side ASR upgrade for improved domain-specific accuracy (see Section~\ref{sec:conclusion}).
+\noindent Its low latency, cost efficiency, and CPU compatibility make Typhoon ASR Real-Time the target server-side upgrade for MANJU (see Section~\ref{sec:conclusion}).
 
 \subsection{Large Language Models}
 Transformer-based LLMs~\cite{vaswani2017attention} model long-range token dependencies for contextual understanding and generation.
@@ -298,115 +296,35 @@ be upgraded or scaled without touching the others.
     \label{fig:methodology}
 \end{figure}
 
-\subsubsection*{What each tier does}
-
-\noindent\textbf{Tier~1 --- Frontend (What the user sees).}
-The user opens a website built with React and TypeScript.
-From here they can drag and drop nodes to build a conversation workflow
-visually, chat with the system using text or voice, manage voice profiles,
-and set API credentials.
-The browser itself handles voice capture and automatically stops recording
-when the user goes silent.
-
-\noindent\textbf{Tier~2 --- API Gateway (Security and routing).}
-Every request from the browser passes through a Go-based server that acts
-as a security checkpoint.
-It verifies the user's identity (via Google login and a short-lived token),
-keeps API keys encrypted in the database, and forwards authenticated
-requests to the AI layer below.
-
-\noindent\textbf{Tier~3 --- AI Orchestrator (The brain).}
-A Python service receives the user's message and runs the workflow the
-user designed.
-This includes asking an LLM to reason about the query, searching through
-uploaded documents for relevant facts, and pulling live data from Google
-Sheets when needed.
-
-\noindent\textbf{Tier~4 --- TTS Service (The voice).}
-Once the AI layer produces a text response, this service converts it into
-natural-sounding speech using the Qwen3-TTS model on a dedicated GPU.
-It supports three voice modes: cloning a specific person's voice, choosing
-a preset character voice, or describing a desired voice in plain language.
+\begin{table}[h]
+    \centering
+    \caption{MANJU's four-tier architecture. Each tier runs in its own
+             Docker container and can be scaled independently.}
+    \label{tab:tiers}
+    \small
+    \begin{tabular}{@{}lll@{}}
+        \toprule
+        \textbf{Tier} & \textbf{Role} & \textbf{Key responsibilities} \\
+        \midrule
+        1 Frontend      & User interface     & React/TS workflow editor, voice capture, VAD \\
+        2 API Gateway   & Security \& routing & Go server, Google OAuth, encrypted API keys \\
+        3 AI Orchestrator & Reasoning        & LLM routing, RAG, Google Sheets integration \\
+        4 TTS Service   & Voice synthesis    & Qwen3-TTS on GPU, three voice modes \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
 % -------------------------------------------------------------------
 \subsection{ASR Module with Voice Activity Detection}
 % -------------------------------------------------------------------
 
-Listening for speech happens entirely inside the browser, so no audio is
-sent to a server until the user has finished speaking.
-The steps below walk through how the system decides when the user has
-stopped talking.
-
-\begin{enumerate}[label=\arabic*.]
-    \item The browser connects the microphone to an audio analyser that
-          measures the loudness (RMS energy) of the incoming sound several
-          times per second.
-    \item If the loudness stays below a fixed threshold
-          ($\theta_\text{VAD} = 0.01$) the system treats the audio as silence.
-    \item Once silence has lasted for 1{,}100\,ms ($\tau_\text{silence}$),
-          the system automatically sends whatever was transcribed so far
-          to the backend.
-    \item This monitoring loop runs continuously in the background without
-          slowing down the rest of the page.
-\end{enumerate}
-
-\noindent The result is a fully hands-free experience: the user simply
-speaks, pauses, and the query is submitted automatically.
-
-% -------------------------------------------------------------------
-\subsubsection{Why Typhoon ASR Will Replace the Browser's Built-in
-               Speech Recognition}
-% -------------------------------------------------------------------
-
-The browser's built-in speech recognition (Web Speech API) is convenient
-but has three practical drawbacks.
-First, it relies on the browser vendor's own cloud servers, so the audio
-leaves the organisation's network.
-Second, there is no way to fine-tune or replace the underlying model.
-Third, it recognises general language well but struggles with
-industry-specific Thai words such as product names or internal policy terms.
-
-For organisations that need on-premises privacy, consistent reliability,
-and the ability to adapt the model to their own vocabulary, we plan to
-replace the browser API with \textbf{Typhoon ASR
-Real-Time}~\cite{sirichotedumrong2026typhoonasr} as a server-side service.
-
-\begin{table}[t]
-    \centering
-    \caption{Thai ASR model comparison. CER = Character Error Rate
-             (lower is better); RTFx = speed vs.\ real time
-             (higher is faster).}
-    \label{tab:asr_comparison}
-    \small
-    \begin{tabular}{@{}lcccc@{}}
-        \toprule
-        \textbf{Model} & \textbf{Size} & \textbf{CER} & \textbf{RTFx} & \textbf{Stream} \\
-        \midrule
-        Pathumma-Whisper Lg-v3   & 1.55B & 5.84\% & $\sim$215        & No  \\
-        Biodatlab Distil-Whisper & 756M  & 8.24\% & $\sim$640        & No  \\
-        \textbf{Typhoon ASR RT}  & \textbf{115M} & \textbf{6.81\%} & \textbf{4{,}097} & \textbf{Yes} \\
-        \bottomrule
-    \end{tabular}
-\end{table}
-
-Table~\ref{tab:asr_comparison} shows that Typhoon ASR is by far the
-smallest and fastest model.
-Despite having only 115M parameters --- about 13 times fewer than
-Pathumma-Whisper --- its error rate (6.81\%) is within 1 percentage point
-of the larger model (5.84\%).
-More importantly, it is the only model that can transcribe speech in real
-time while the user is still talking, which is essential for a responsive
-voice assistant.
-Because it runs on an ordinary CPU without a GPU, it also removes a
-significant infrastructure cost.
-Its open-source licence allows full in-house deployment, keeping sensitive
-voice data off third-party servers.
-
-Beyond accuracy, Typhoon ASR can be fine-tuned on an organisation's own
-terminology using modest hardware such as a free Google Colab session.
-This means product names, internal codes, and domain jargon can be taught
-to the model directly, reducing the errors that currently cause the most
-downstream routing mistakes.
+Speech recognition runs entirely in the browser via the Web Speech API
+(\texttt{webkitSpeechRecognition}), so no audio is transmitted until the
+utterance is complete.
+A custom energy-based VAD continuously monitors microphone RMS energy and
+triggers automatic query submission once silence exceeds
+$\tau_\text{silence} = 1{,}100$\,ms (threshold $\theta_\text{VAD} = 0.01$),
+providing a fully hands-free experience.
 
 % -------------------------------------------------------------------
 \subsection{How the Multi-Agent System Works}
@@ -459,60 +377,20 @@ answer aloud.''
     \end{tabular}
 \end{table}
 
-\subsubsection{From Design to Live Response}
-
-Once a customer sends a query, the system reads the saved design and
-follows it step by step.
-Each component does its part---receiving the input, looking up relevant
-facts, asking the AI to form an answer---and passes what it has found to
-the next component in the chain.
-This ensures the final reply always draws on all the information gathered
-along the way.
-The system also automatically detects whether the conversation is
-text-based or voice-based and adjusts accordingly, so the operator does
-not need to configure this separately.
-
 % -------------------------------------------------------------------
 \subsection{How Documents Are Searched (RAG)}
 % -------------------------------------------------------------------
 \label{sec:rag}
 
-Rather than relying solely on the language model's built-in knowledge,
-MANJU can search a set of documents that the operator has uploaded.
-This reduces the chance of the AI making up facts.
-The process has six stages.
-
-\begin{enumerate}[label=\arabic*.]
-    \item \textbf{Upload.}
-          The operator uploads PDF, DOCX, or TXT files through the web
-          interface. The files are stored on the server and an embedding
-          job is triggered automatically.
-    \item \textbf{Chunking.}
-          Each document is split into overlapping segments of roughly
-          1{,}000 characters (with a 200-character overlap between
-          consecutive segments) so that no single piece is too long for
-          the model to process.
-    \item \textbf{Embedding.}
-          Every chunk is converted into a list of 1{,}536 numbers that
-          capture its meaning, using OpenAI's
-          \texttt{text-embedding-3-small} model.
-    \item \textbf{Indexing.}
-          The number lists are stored in a FAISS index --- a fast
-          similarity-search structure --- saved on disk so they persist
-          across server restarts.
-    \item \textbf{Retrieval.}
-          When a user asks a question, the question is converted into
-          the same number format and the three most similar document
-          chunks are retrieved.
-    \item \textbf{Context injection.}
-          The retrieved passages, along with their source file names and
-          similarity scores, are placed at the top of the prompt before
-          the language model generates its answer.
-\end{enumerate}
-
-\noindent If a document index cannot be found at the expected path the
-system tries two fallback locations before giving up, which keeps
-existing deployments working even after the folder structure changes.
+To ground responses in operator-provided knowledge, MANJU employs
+Retrieval-Augmented Generation (RAG)~\cite{lewis2020rag}.
+Uploaded documents (PDF, DOCX, TXT) are split into overlapping
+1{,}000-character chunks and embedded with
+\texttt{text-embedding-3-small} (1{,}536-dimensional vectors) into a
+persistent FAISS index.
+At inference time, the user query is embedded and the top-3 nearest
+chunks are retrieved and prepended to the LLM prompt as grounding
+context, together with source filenames and similarity scores.
 
 \subsection{Google Sheets Integration}
 
