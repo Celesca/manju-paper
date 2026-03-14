@@ -149,14 +149,25 @@ Sirichotedumrong et~al.~\cite{sirichotedumrong2026typhoonasr} recently introduce
 
 Key architectural choices include: (i)~an 8$\times$ depthwise convolutional subsampling encoder that is $\sim$2.4$\times$ faster than standard Conformer~\cite{gulati2020conformer}, (ii)~a Transducer (RNN-T) decoder~\cite{graves2012sequence} enabling true frame-synchronous streaming, and (iii)~a rigorous text normalization pipeline that resolves systemic Thai transcription ambiguities such as context-dependent number verbalization and repetition markers (\textit{mai yamok}).
 
-The model was trained on $\sim$11{,}000 hours of Thai audio curated via a consensus-based pseudo-labeling pipeline using three Whisper-Large teacher models with majority voting. Performance evaluation on the Typhoon ASR Benchmark~\cite{sirichotedumrong2026typhoonasr} demonstrates:
-\begin{itemize}[nosep]
-    \item \textbf{Competitive accuracy:} CER of 6.81\% on the Gigaspeech2-Typhoon standard track, comparable to the offline Pathumma-Whisper Large-v3 (5.84\% CER) which has 1.55B parameters ($13\times$ larger).
-    \item \textbf{Superior robustness:} On the challenging TVSpeech robustness track (in-the-wild Thai media), when trained on the same Whisper Large-v3 architecture, their data pipeline reduces CER from 10.36\% to 6.32\%---a 4.04\% absolute improvement over Pathumma's training data.
-    \item \textbf{Extreme throughput:} 4{,}097$\times$ real-time processing speed (RTFx), which is 15--19$\times$ faster than Whisper variants, and $\sim$45$\times$ reduction in computational cost (GFLOPs) compared to Whisper Large-v3.
-    \item \textbf{Cost efficiency:} At \$0.0023/hour for 20{,}000 seconds of audio on an NVIDIA L4 GPU---up to 156$\times$ cheaper than the Whisper API and 400$\times$ cheaper than Google/Azure Speech-to-Text.
-    \item \textbf{CPU-optimized:} Runs efficiently on standard CPUs without GPU requirements, enabling privacy-first on-premises deployment.
-\end{itemize}
+The model was trained on $\sim$11{,}000 hours of Thai audio and evaluated on the Typhoon ASR Benchmark~\cite{sirichotedumrong2026typhoonasr}. Table~\ref{tab:typhoon_perf} summarises its key performance figures.
+
+\begin{table}[h]
+    \centering
+    \caption{Typhoon ASR Real-Time key performance figures.}
+    \label{tab:typhoon_perf}
+    \small
+    \begin{tabular}{@{}lp{4.5cm}@{}}
+        \toprule
+        \textbf{Metric} & \textbf{Value} \\
+        \midrule
+        Accuracy (CER) & 6.81\% vs.\ 5.84\% Pathumma ($13\times$ larger) \\
+        Robustness & CER 10.36\%$\to$6.32\% on in-the-wild Thai media \\
+        Throughput & 4{,}097$\times$ real-time (15--19$\times$ faster than Whisper) \\
+        Cost & \$0.0023/hr on L4 GPU; up to 400$\times$ cheaper than cloud APIs \\
+        Hardware & Runs on CPU; no GPU required \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
 \noindent These characteristics make Typhoon ASR Real-Time the ideal candidate for server-side Thai ASR in production voice assistants like MANJU, where low latency, cost efficiency, and on-premises privacy are critical requirements. In MANJU's current MVP, we leverage the browser's Web Speech API (\texttt{webkitSpeechRecognition}) for client-side ASR, augmented with a custom energy-based VAD module; Typhoon ASR is planned as the server-side ASR upgrade for improved domain-specific accuracy (see Section~\ref{sec:conclusion}).
 
@@ -514,64 +525,39 @@ This enables real-time access to frequently updated information (e.g., inventory
 
 Once the AI layer produces a text response, the TTS module converts it
 into spoken audio and streams it back to the user.
-MANJU supports two interchangeable providers: a cloud service for quick
-prototyping and a GPU-hosted model for production-grade Thai voice output.
-The choice is set inside the \texttt{voice-output} node of the workflow.
+MANJU supports two interchangeable providers selected inside the workflow
+editor; Table~\ref{tab:tts_options} summarises their key differences.
 
 % -------------------------------------------------------------------
-\subsubsection{Option 1 --- OpenAI TTS (Cloud, Quick Setup)}
+\subsubsection{TTS Provider Comparison}
 % -------------------------------------------------------------------
 
-The simplest option uses OpenAI's speech service, which requires no
-additional hardware.
-It offers two quality levels (\texttt{tts-1} for speed, \texttt{tts-1-hd}
-for higher fidelity) and six built-in voice characters: \textit{alloy},
-\textit{echo}, \textit{fable}, \textit{onyx}, \textit{nova}, and
-\textit{shimmer}.
-Audio is returned as a streaming MP3, so playback can begin before the
-full response has been generated.
-This option is best suited for development and testing because it is easy
-to enable but sends audio data to an external server.
+\begin{table}[h]
+    \centering
+    \caption{Comparison of the two TTS providers supported by MANJU.}
+    \label{tab:tts_options}
+    \small
+    \begin{tabular}{@{}lll@{}}
+        \toprule
+        \textbf{Feature} & \textbf{OpenAI TTS} & \textbf{Qwen3-TTS} \\
+        \midrule
+        Deployment    & Cloud (external)   & On-premise (GPU) \\
+        Data privacy  & Audio sent offsite & Stays in-house \\
+        Setup         & API key only       & GPU required \\
+        Thai voice cloning & No            & Yes \\
+        Preset voices & 6 built-in         & 9 characters \\
+        Best for      & Prototyping        & Production \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
-% -------------------------------------------------------------------
-\subsubsection{Option 2 --- Qwen3-TTS (On-Premise, GPU-Accelerated)}
-% -------------------------------------------------------------------
-
-For production deployments --- especially those requiring Thai voice
-cloning or data privacy --- MANJU runs Qwen3-TTS-12Hz-1.7B on a local GPU.
-Three voice modes are available.
-
-\begin{itemize}[nosep]
-    \item \textbf{Base (voice cloning):} The system listens to a short
-          reference recording of a person's voice and reproduces that
-          voice for the response.
-    \item \textbf{CustomVoice (preset characters):} Nine ready-made
-          voices (5~male, 4~female) with distinct personalities can be
-          selected without any reference audio.
-    \item \textbf{VoiceDesign (describe your voice):} The operator
-          writes a plain-language description such as
-          ``young female, warm tone'' and the model generates a matching
-          voice on the fly.
-\end{itemize}
-
-% -------------------------------------------------------------------
-\subsubsection{How the GPU Is Kept Fast}
-% -------------------------------------------------------------------
-
-Running a large voice model efficiently requires several optimisations.
-
-\noindent\textbf{Memory management.}
-All three voice variants are loaded into GPU memory at startup and kept
-there simultaneously (each uses roughly 3.4\,GB on an 80\,GB H100).
-This means switching between voice modes takes no extra time because
-nothing needs to be reloaded.
-
-\noindent\textbf{Precision and warmup.}
-The models run in \texttt{bfloat16} half-precision to halve memory usage
-and speed up computation, with Flash Attention~2~\cite{dao2022flashattention}
-enabled on supported GPUs.
-A brief warmup pass is performed at startup so that the first real request
-does not pay the 2--5 second initialisation cost.
+\noindent Qwen3-TTS additionally supports \textbf{VoiceDesign}: the
+operator describes a desired voice in plain language (e.g.,
+``young female, warm tone'') and the model generates it on the fly.
+All three Qwen3-TTS variants are preloaded into GPU memory at startup
+with Flash Attention~2~\cite{dao2022flashattention} and a brief warmup
+pass, so switching between voice modes and serving the first request both
+add no extra delay.
 
 % -------------------------------------------------------------------
 \subsubsection{How Audio Is Streamed Sentence by Sentence}
@@ -627,12 +613,6 @@ The workflow is serialized as a JSON object containing \texttt{nodes[]} and \tex
 The demo page provides a chat interface supporting both text and voice input/output.
 For voice workflows, the console displays the ASR transcript in real time, sends the finalized text to the backend, and plays synthesized audio with a progress indicator.
 Audio caching in IndexedDB (keyed by a deterministic hash of text + voice settings) enables instant replay without re-synthesis.
-
-\subsubsection{Authentication and Security}
-User authentication follows the Google OAuth~2.0 authorization code flow.
-The Go backend issues JWT tokens (HS256, 7-day expiry) stored as HttpOnly cookies.
-All API routes are protected by both JWT validation (\texttt{RequireAuth} middleware) and inter-service API key verification (\texttt{APIKeyGuard}).
-User-provided LLM API keys are encrypted with AES-256-GCM before storage and decrypted only at request time; the AI backend strictly uses per-request user keys without environment variable fallback.
 
 \subsubsection{Voice Asset Management}
 Users can upload custom voice reference audio (WAV, MP3, M4A, OGG, FLAC; max 50\,MB) for voice cloning.
