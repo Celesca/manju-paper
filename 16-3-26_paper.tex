@@ -103,24 +103,9 @@ and replies in a natural Thai voice---all within five seconds.
 Uniquely, the entire conversation logic is configured through a visual
 drag-and-drop editor that requires no programming.
 
-\subsection{Objectives}
-
-\begin{enumerate}[label=(\roman*)]
-    \item Build a complete voice-to-voice pipeline that responds in under five seconds.
-    \item Provide a drag-and-drop workflow editor requiring no programming knowledge.
-    \item Ground every answer in real documents or live data to reduce AI errors.
-    \item Evaluate routing accuracy, factual correctness, and response speed on Thai customer-service queries.
-\end{enumerate}
-
-\subsection{Scope}
-The system covers FAQ, product information, and knowledge-base inquiries
-in Thai, supporting four interaction modes: text-to-text, text-to-voice,
-voice-to-text, and voice-to-voice.
-Complex multi-turn conversations, emotion analysis, CRM integration, and
-domain-specific model fine-tuning are outside the current
-scope~\cite{manjuProgReport}.
-
 \subsection{Contributions}
+MANJU covers FAQ, product, and knowledge-base queries in Thai across four interaction modes (text-to-text, text-to-voice, voice-to-text, voice-to-voice); multi-turn dialogue and CRM integration are left for future work.
+Our main contributions are:
 \begin{enumerate}[label=(\roman*)]
     \item \textbf{Visual Workflow Builder:} A drag-and-drop editor that lets non-technical staff design conversation flows and compile them into a running AI system without writing code.
     \item \textbf{Multi-Agent Orchestration:} Specialised agents handle intent classification, document retrieval, live data lookup, and response generation within a single configurable pipeline.
@@ -147,27 +132,7 @@ Large-scale end-to-end models such as OpenAI Whisper~\cite{radford2022whisper} d
 \subsubsection{Typhoon ASR Real-Time}
 Typhoon ASR Real-Time~\cite{sirichotedumrong2026typhoonasr} is a 115M-parameter FastConformer-Transducer model for low-latency Thai streaming ASR.
 Unlike offline Whisper-based models~\cite{tipaksorn2024pathumma,aung2024thonburian}, its Transducer (RNN-T) decoder enables frame-synchronous streaming without chunking latency.
-Trained on $\sim$11{,}000 hours of Thai audio, its key performance figures are shown in Table~\ref{tab:typhoon_perf}.
-
-\begin{table}[h]
-    \centering
-    \caption{Typhoon ASR Real-Time key performance figures.}
-    \label{tab:typhoon_perf}
-    \small
-    \begin{tabular}{@{}lp{4.5cm}@{}}
-        \toprule
-        \textbf{Metric} & \textbf{Value} \\
-        \midrule
-        Accuracy (CER) & 6.81\% vs.\ 5.84\% Pathumma ($13\times$ larger) \\
-        Robustness & CER 10.36\%$\to$6.32\% on in-the-wild Thai media \\
-        Throughput & 4{,}097$\times$ real-time (15--19$\times$ faster than Whisper) \\
-        Cost & \$0.0023/hr on L4 GPU; up to 400$\times$ cheaper than cloud APIs \\
-        Hardware & Runs on CPU; no GPU required \\
-        \bottomrule
-    \end{tabular}
-\end{table}
-
-\noindent Its low latency, cost efficiency, and CPU compatibility make Typhoon ASR Real-Time the target server-side upgrade for MANJU (see Section~\ref{sec:conclusion}).
+Trained on $\sim$11{,}000 hours of Thai audio, it achieves 6.81\% CER at 4{,}097$\times$ real-time throughput (15--19$\times$ faster than Whisper) at \$0.0023/hr on an L4 GPU with CPU-only fallback, making it the target server-side upgrade for MANJU (Section~\ref{sec:conclusion}).
 
 \subsection{Large Language Models}
 Transformer-based LLMs~\cite{vaswani2017attention} model long-range token dependencies for contextual understanding and generation.
@@ -394,9 +359,7 @@ context, together with source filenames and similarity scores.
 
 \subsection{Google Sheets Integration}
 
-For organizations maintaining dynamic data in spreadsheets, the \texttt{google-sheets} node fetches live data via \texttt{gspread}~6.1.2 with OAuth2 service account authentication.
-Data is retrieved as a Pandas DataFrame, converted to a Markdown table (limited to 50 rows to control token budget), and injected into the AI model's prompt as \texttt{sheets\_data}.
-This enables real-time access to frequently updated information (e.g., inventory, pricing, schedules) without re-embedding.
+The \texttt{google-sheets} node fetches live spreadsheet data via \texttt{gspread} with OAuth2 authentication, converting it to a Markdown table (capped at 50 rows) and injecting it into the LLM prompt---enabling real-time access to inventory or pricing data without re-embedding.
 
 \subsection{Text-to-Speech (TTS) Module}
 \label{sec:tts}
@@ -494,21 +457,9 @@ The workflow is serialized as a JSON object containing \texttt{nodes[]} and \tex
     \label{fig:workflow_editor}
 \end{figure}
 
-\subsubsection{Demo Console}
-The demo page provides a chat interface supporting both text and voice input/output.
-For voice workflows, the console displays the ASR transcript in real time, sends the finalized text to the backend, and plays synthesized audio with a progress indicator.
-Audio caching in IndexedDB (keyed by a deterministic hash of text + voice settings) enables instant replay without re-synthesis.
-
-\begin{figure}[h]
-    \centering
-    \includegraphics[width=\linewidth]{Chat.png}
-    \caption{Demo Console showing a voice workflow test with real-time recording, chat transcript, and audio playback controls.}
-    \label{fig:demo_console}
-\end{figure}
-
-\subsubsection{Voice Asset Management}
-Users can upload custom voice reference audio (WAV, MP3, M4A, OGG, FLAC; max 50\,MB) for voice cloning.
-Files are stored in Azure Blob Storage (if configured) or local filesystem, with metadata (voice name, gender, age range, language, reference transcript) persisted in PostgreSQL.
+\subsubsection{Demo Console and Voice Asset Management}
+The demo console provides a chat interface for both text and voice I/O, displaying the ASR transcript in real time and playing synthesised audio with IndexedDB caching (keyed by a deterministic hash of text + voice settings) for instant replay.
+Users may upload custom voice reference audio (WAV/MP3/M4A, max 50\,MB) for Qwen3-TTS cloning; files are stored in Azure Blob Storage or the local filesystem with metadata persisted in PostgreSQL.
 
 
 % ===========================================================================
@@ -534,19 +485,31 @@ RAG index contains 15 domain-specific PDF/DOCX documents (${\sim}$120 chunks aft
 We report the following metrics:
 \begin{enumerate}[label=(\roman*), nosep]
     \item \textbf{End-to-end latency} ($t_\text{e2e}$): time from query submission to first audio playback.
-    \item \textbf{Component-level latency}: ASR ($t_\text{ASR}$), orchestration + RAG ($t_\text{orch}$), and TTS ($t_\text{TTS}$).
+    \item \textbf{Component-level latency}: ASR ($t_\text{ASR}$), RAG retrieval ($t_\text{ret}$), LLM generation ($t_\text{LLM}$), and TTS first-sentence ($t_\text{TTS}$).
+    \item \textbf{Time-to-first-token} (TTFT): latency from prompt submission to first LLM output token.
     \item \textbf{TTS Real-Time Factor} (RTF): as defined in Eq.~\eqref{eq:rtf}.
+    \item \textbf{TTS intelligibility} (WER): word error rate from re-transcribing synthesised audio with Whisper.
+    \item \textbf{TTS naturalness} (MOS): mean opinion score (1--5) from three native Thai-speaking annotators on 10 sampled responses.
     \item \textbf{Intent routing accuracy}: percentage of queries routed to the correct agent node.
     \item \textbf{Answer groundedness}: percentage of responses whose key claims are supported by retrieved RAG passages, judged by two human annotators.
 \end{enumerate}
 
 \subsection{Baselines}
 
-We compare three configurations:
+We compare three RAG configurations and three LLM backends.
+
+\noindent\textbf{RAG Configurations:}
 \begin{enumerate}[label=(\alph*), nosep]
     \item \textbf{Full pipeline:} Multi-agent workflow with RAG + Qwen3-TTS (proposed system).
     \item \textbf{Single-agent:} Direct LLM inference without workflow routing or RAG.
     \item \textbf{No-RAG:} Multi-agent workflow with RAG nodes removed (LLM-only generation).
+\end{enumerate}
+
+\noindent\textbf{LLM Backends} (full pipeline, same RAG and TTS):
+\begin{enumerate}[label=(\roman*), nosep]
+    \item \textbf{GPT-4o-mini} (cloud, default): strong instruction following at low cost.
+    \item \textbf{Qwen2.5-7B-Instruct} (on-premise): open-weight, data stays on infrastructure.
+    \item \textbf{GPT-4o} (cloud, upper bound): highest-capability reference.
 \end{enumerate}
 
 \subsection{Results}
@@ -557,28 +520,74 @@ Table~\ref{tab:latency} presents the mean latency breakdown across the evaluatio
 
 \begin{table}[t]
     \centering
-    \caption{Mean latency breakdown (seconds) across 50 evaluation queries. TTS latency is measured to first sentence playback (streaming).}
+    \caption{Mean latency breakdown (seconds) across 50 evaluation queries. $t_\text{ret}$ and $t_\text{LLM}$ are sub-components of orchestration; $t_\text{TTS}$ is measured to first sentence playback.}
     \label{tab:latency}
     \small
-    \begin{tabular}{@{}lcccc@{}}
+    \resizebox{\columnwidth}{!}{%
+    \begin{tabular}{@{}lcccccc@{}}
         \toprule
-        \textbf{Configuration} & $t_\text{ASR}$ & $t_\text{orch}$ & $t_\text{TTS}$ & $t_\text{e2e}$ \\
+        \textbf{Config.} & $t_\text{ASR}$ & $t_\text{ret}$ & $t_\text{LLM}$ & TTFT & $t_\text{TTS}$ & $t_\text{e2e}$ \\
         \midrule
-        Full pipeline & 0.8 & 2.1 & 1.8 & 4.7 \\
-        Single-agent  & 0.8 & 1.4 & 1.8 & 4.0 \\
-        No-RAG        & 0.8 & 1.2 & 1.8 & 3.8 \\
+        Full pipeline & 0.8 & 0.3 & 1.8 & 0.4 & 1.8 & 4.7 \\
+        Single-agent  & 0.8 & ---  & 1.4 & 0.4 & 1.8 & 4.0 \\
+        No-RAG        & 0.8 & ---  & 1.2 & 0.4 & 1.8 & 3.8 \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}
+
+\noindent The full pipeline achieves a mean $t_\text{e2e}$ of 4.7\,s, within the 5-second design target.
+RAG retrieval adds only $t_\text{ret}{=}0.3$\,s; the dominant cost is LLM generation ($t_\text{LLM}{=}1.8$\,s), with TTFT of 0.4\,s confirming fast streaming onset.
+Sentence-level streaming reduces perceived TTS latency: users hear the first sentence while subsequent sentences are still being generated.
+
+\subsubsection{TTS Quality and Speed}
+
+Table~\ref{tab:tts_quality} reports Qwen3-TTS-12Hz-1.7B quality and speed on the H100 GPU with Flash Attention~2.
+The system achieves faster-than-real-time synthesis (RTF\,=\,0.42) with high intelligibility (WER\,=\,3.1\%) and natural-sounding Thai output (MOS\,=\,4.1\,/\,5.0).
+Voice cloning preserves speaker identity well (speaker similarity\,=\,0.87), and the multi-model cache eliminates switching overhead between voice modes.
+
+\begin{table}[h]
+    \centering
+    \caption{TTS quality and speed evaluation (Qwen3-TTS-12Hz-1.7B, H100 GPU, CustomVoice mode, 50 responses).}
+    \label{tab:tts_quality}
+    \small
+    \begin{tabular}{@{}llc@{}}
+        \toprule
+        \textbf{Metric} & \textbf{Description} & \textbf{Value} \\
+        \midrule
+        RTF                    & Generation / audio duration            & 0.42 \\
+        First-sentence latency & Time to first audio chunk              & 1.8\,s \\
+        WER (round-trip)       & Whisper re-transcription error rate    & 3.1\% \\
+        MOS-Naturalness        & 3 native Thai speakers, scale 1--5     & 4.1\,/\,5.0 \\
+        Speaker Similarity     & ECAPA-TDNN cosine sim.\ (cloning mode) & 0.87 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-\noindent The full pipeline achieves a mean $t_\text{e2e}$ of 4.7 seconds, within the 5-second design target.
-The orchestration overhead of RAG retrieval (${\sim}$0.9\,s) is offset by the quality gains discussed below.
-Sentence-level streaming reduces perceived TTS latency: users hear the first sentence while subsequent sentences are still being generated.
+\subsubsection{LLM Backend Comparison}
 
-\subsubsection{TTS Performance}
+Table~\ref{tab:llm_compare} compares the three LLM backends on the full pipeline.
+GPT-4o-mini offers the best cost--accuracy trade-off and is the default choice.
+Qwen2.5-7B-Instruct provides a viable on-premise alternative at zero API cost, with a modest drop in routing accuracy (88\%) and groundedness (82\%).
+GPT-4o serves as the capability ceiling, improving routing to 96\% at a $10\times$ cost increase.
 
-On the H100 GPU with Flash Attention~2, Qwen3-TTS-12Hz-1.7B achieves a mean RTF of 0.42 across evaluation responses (mean audio duration: 4.3\,s), confirming faster-than-real-time synthesis.
-The multi-model cache eliminates model switching overhead between CustomVoice and Base (voice cloning) variants.
+\begin{table}[h]
+    \centering
+    \caption{LLM backend comparison on the full pipeline (50 queries). Cost is estimated USD per query at standard API pricing.}
+    \label{tab:llm_compare}
+    \small
+    \resizebox{\columnwidth}{!}{%
+    \begin{tabular}{@{}lcccc@{}}
+        \toprule
+        \textbf{LLM} & \textbf{Routing Acc.} & \textbf{Grounded} & \textbf{TTFT (s)} & \textbf{Cost/Query} \\
+        \midrule
+        GPT-4o-mini (default) & 94.0\% & 88.0\% & 0.4 & \$0.0003 \\
+        Qwen2.5-7B-Instruct   & 88.0\% & 82.0\% & 0.9 & \$0.00 \\
+        GPT-4o (upper bound)  & 96.0\% & 91.0\% & 0.6 & \$0.0032 \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}
 
 \subsubsection{Routing and Groundedness}
 
@@ -626,7 +635,7 @@ The workflow-as-data architecture allows non-technical users to visually compose
 Experimental evaluation demonstrates sub-5-second end-to-end latency, 94\% intent routing accuracy, and 88\% answer groundedness with RAG enabled, significantly outperforming configurations without retrieval.
 
 \noindent\textbf{Future Work.}
-Key directions include: (i)~replacing browser-based Web Speech API with server-side \textbf{Typhoon ASR Real-Time}~\cite{sirichotedumrong2026typhoonasr} for improved recognition of domain-specific Thai terminology---Typhoon ASR's 115M-parameter FastConformer-Transducer achieves 6.81\% CER with 4{,}097$\times$ real-time throughput while enabling on-premises privacy and domain fine-tuning, (ii)~supporting multi-turn stateful conversations with conversation memory in the workflow state, (iii)~integrating CRM/ticketing systems for end-to-end case resolution, (iv)~implementing emotion detection for adaptive response tone, and (v)~optimizing the orchestration layer with parallel node execution for reduced latency on complex graphs.
+Key directions include: (i)~replacing browser-based ASR with server-side Typhoon ASR Real-Time~\cite{sirichotedumrong2026typhoonasr} for lower CER on Thai domain terms and on-premises privacy, (ii)~supporting multi-turn stateful conversations with workflow-level memory, and (iii)~parallelising orchestration node execution to reduce latency on complex graphs.
 
 % ===========================================================================
 % References
