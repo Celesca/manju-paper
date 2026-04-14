@@ -98,13 +98,13 @@ is configured through a visual workflow editor requiring no programming
 knowledge, enabling rapid deployment by non-technical operators.
 
 Our principal contributions are:
-(i)~a \textbf{visual, no-code workflow builder} that lets non-technical operators design conversation flows via drag-and-drop;
+(i)~a \textbf{visual, no-code workflow builder} delivered as a web application, enabling non-technical operators to design and deploy conversation flows via drag-and-drop without programming;
 (ii)~a \textbf{multi-agent orchestration engine} in which specialised agents for intent classification, document retrieval, live data lookup, and response generation cooperate within a RAG-grounded pipeline; and
 (iii)~a \textbf{production-ready Thai voice platform} with streaming ASR, GPU-accelerated TTS with voice cloning, and a secure four-tier containerised deployment.
 
 \noindent\textbf{Paper Organization.}
 Section~\ref{sec:related} reviews related work.
-Section~\ref{sec:methodology} describes the system architecture.
+Section~\ref{sec:methodology} describes the MANJU framework.
 Section~\ref{sec:experiments} presents results.
 Section~\ref{sec:conclusion} concludes.
 
@@ -147,7 +147,7 @@ Recent voice assistants combine ASR, LLM-based intent handling, and TTS for more
 MANJU extends this line of work by providing a configurable multi-agent workflow platform with RAG grounding and high-fidelity Thai voice cloning.
 
 % ===========================================================================
-\section{Methodology}
+\section{MANJU Framework}
 \label{sec:methodology}
 % ===========================================================================
 
@@ -239,7 +239,7 @@ be upgraded or scaled without touching the others.
           (sec3) {};
 
     \end{tikzpicture}
-    \caption{System methodology overview. The pipeline consists of three stages:
+    \caption{MANJU framework overview. The pipeline consists of three stages:
     (1)~\textit{Speech-to-Text} transcribes voice input via Typhoon ASR;
     (2)~\textit{Multi-Agent} routing classifies intent and dispatches to
     Product, Knowledge, or General agents;
@@ -247,7 +247,7 @@ be upgraded or scaled without touching the others.
     \label{fig:methodology}
 \end{figure}
 
-\begin{table}[h]
+\begin{table}[b]
     \centering
     \caption{MANJU's four-tier architecture. Each tier runs in its own
              Docker container and can be scaled independently.}
@@ -269,16 +269,31 @@ be upgraded or scaled without touching the others.
 \subsection{ASR Module with Voice Activity Detection}
 % -------------------------------------------------------------------
 
-Speech recognition runs entirely in the browser via the Web Speech API
-(\texttt{webkitSpeechRecognition}), so no audio is transmitted until the
-utterance is complete.
-A custom energy-based VAD continuously monitors microphone RMS energy and
-triggers automatic query submission once silence exceeds
-$\tau_\text{silence} = 1{,}100$\,ms (threshold $\theta_\text{VAD} = 0.01$),
-providing a fully hands-free experience.
+MANJU supports two interchangeable ASR modes.
+In \textbf{browser mode}, the Web Speech API
+(\texttt{webkitSpeechRecognition}) performs recognition entirely
+client-side, requiring no audio upload.
+In \textbf{Typhoon ASR mode}, the frontend records raw audio via the
+MediaRecorder API and transmits the completed blob to a server-side
+Typhoon ASR Real-Time~\cite{sirichotedumrong2026typhoonasr} instance
+for transcription, enabling higher accuracy on domain-specific Thai
+vocabulary at the cost of a network round-trip.
+
+Both modes share a common frontend voice activity detector (VAD)
+that determines when the user has finished speaking.
+The VAD opens the microphone through the Web Audio API, reads PCM
+amplitude from an \texttt{AnalyserNode}, and computes the root mean
+square (RMS) energy of each frame.
+Frames with RMS above $\theta_\text{VAD} = 0.01$ are classified as
+speech; once speech has been detected, a sustained silence of
+$\tau_\text{silence} = 1{,}100$\,ms triggers automatic finalisation:
+the system commits the current transcript (browser mode) or stops
+recording and dispatches the audio blob to the backend (Typhoon mode),
+then releases the microphone stream, providing a fully hands-free
+experience.
 
 % -------------------------------------------------------------------
-\subsection{How the Multi-Agent System Works}
+\subsection{Multi-Agent Module}
 % -------------------------------------------------------------------
 
 MANJU treats a conversation workflow as a declarative, serialisable
@@ -291,11 +306,8 @@ This workflow-as-data principle decouples the conversation policy from
 the underlying infrastructure, enabling non-technical operators to adapt
 system behaviour by editing the visual layout alone.
 
-% -------------------------------------------------------------------
-\subsection{How Documents Are Searched (RAG)}
-% -------------------------------------------------------------------
+\noindent\textbf{(a) RAG Document Search.}
 \label{sec:rag}
-
 To ground responses in operator-provided knowledge, MANJU employs
 Retrieval-Augmented Generation (RAG)~\cite{lewis2020rag}.
 Uploaded documents (PDF, DOCX, TXT) are split into overlapping
@@ -306,8 +318,7 @@ At inference time, the user query is embedded and the top-3 nearest
 chunks are retrieved and prepended to the LLM prompt as grounding
 context, together with source filenames and similarity scores.
 
-\subsection{Google Sheets Integration}
-
+\noindent\textbf{(b) Google Sheets Integration.}
 The \texttt{google-sheets} node fetches live spreadsheet data via \texttt{gspread} with OAuth2 authentication, converting it to a Markdown table (capped at 50 rows) and injecting it into the LLM prompt---enabling real-time access to inventory or pricing data without re-embedding.
 
 \subsection{Text-to-Speech (TTS) Module}
@@ -316,85 +327,47 @@ The \texttt{google-sheets} node fetches live spreadsheet data via \texttt{gsprea
 Once the AI layer produces a text response, the TTS module converts it
 into spoken audio and streams it back to the user.
 MANJU supports two interchangeable providers selected inside the workflow
-editor; Table~\ref{tab:tts_options} summarises their key differences.
-
-% -------------------------------------------------------------------
-\subsubsection{TTS Provider Comparison}
-% -------------------------------------------------------------------
-
-\begin{table}[h]
-    \centering
-    \caption{Comparison of the two TTS providers supported by MANJU.}
-    \label{tab:tts_options}
-    \small
-    \begin{tabular}{@{}lll@{}}
-        \toprule
-        \textbf{Feature} & \textbf{OpenAI TTS} & \textbf{Qwen3-TTS} \\
-        \midrule
-        Deployment    & Cloud (external)   & On-premise (GPU) \\
-        Data privacy  & Audio sent offsite & Stays in-house \\
-        Setup         & API key only       & GPU required \\
-        Thai voice cloning & No            & Yes \\
-        Preset voices & 6 built-in         & 9 characters \\
-        Best for      & Prototyping        & Production \\
-        \bottomrule
-    \end{tabular}
-\end{table}
-
-\noindent Qwen3-TTS additionally supports \textbf{VoiceDesign}: the
-operator describes a desired voice in plain language (e.g.,
-``young female, warm tone'') and the model generates it on the fly.
+editor.
+\textbf{OpenAI TTS} is a cloud-based service that requires only an API
+key, offering six built-in voices and minimal setup---well suited for
+rapid prototyping or scenarios where on-premise GPU infrastructure is
+unavailable.
+\textbf{Qwen3-TTS} runs on-premise on a dedicated GPU, keeping all
+audio data in-house; it provides nine preset character voices, supports
+Thai voice cloning from a reference recording, and offers a
+\textbf{VoiceDesign} mode in which the operator describes a desired
+voice in plain language (e.g., ``young female, warm tone'') and the
+model generates it on the fly.
 All three Qwen3-TTS variants are preloaded into GPU memory at startup
 with Flash Attention~2~\cite{dao2022flashattention} and a brief warmup
 pass, so switching between voice modes and serving the first request both
 add no extra delay.
+Both providers are fully supported; the choice depends on the
+deployment scenario and privacy requirements.
 
 % -------------------------------------------------------------------
-\subsubsection{How Audio Is Streamed Sentence by Sentence}
+\subsubsection{Sentence-Level Audio Streaming}
 % -------------------------------------------------------------------
 
 Synthesising an entire paragraph before playing anything would make the
 system feel slow.
-Instead, the response text is broken into short chunks --- at most
-200 characters each --- and each chunk is synthesised and sent to the
+Instead, the response text is broken into short chunks---at most
+200 characters each---and each chunk is synthesised and sent to the
 browser independently.
-
-\begin{itemize}[nosep]
-    \item Thai text is split using PyThaiNLP's sentence
-          tokeniser~\cite{pythainlp}.
-    \item All other languages are split on standard sentence-ending
-          punctuation.
-    \item Very short fragments under 20 characters are merged with the
-          next sentence to avoid sending near-empty audio clips.
-\end{itemize}
-
-\noindent The browser starts playing the first sentence while the server
+Thai text is split using PyThaiNLP's sentence
+tokeniser~\cite{pythainlp}, while all other languages are split on
+standard sentence-ending punctuation; very short fragments under
+20 characters are merged with the next sentence to avoid sending
+near-empty audio clips.
+The browser starts playing the first sentence while the server
 is still generating the second and pre-fetching the third.
 Completed audio clips are saved in the browser's local storage
 (IndexedDB) so that repeating the same query plays back instantly
 without re-synthesis.
 
-% -------------------------------------------------------------------
-\subsubsection{Measuring Speed: the Real-Time Factor}
-% -------------------------------------------------------------------
-
-Every response includes a speed metric called the Real-Time Factor (RTF),
-defined as:
-
-\begin{equation}
-    \text{RTF} = \frac{t_\text{generation}}{t_\text{audio\_duration}}
-    \label{eq:rtf_intro}
-\end{equation}
-
-\noindent An RTF below 1.0 means the system generated the audio faster
-than it takes to play it back --- in other words, faster than real time.
-For example, an RTF of 0.42 means the server produced a 10-second audio
-clip in only 4.2 seconds.
-Each response also reports total generation time, pure model inference
-time, audio duration, and the number of sentence chunks produced.
 \subsection{Web Application}
 
-\subsubsection{Visual Workflow Editor}
+The platform is delivered as a web application comprising a visual workflow editor and a demo console.
 The workflow editor provides an infinite canvas with zoom/pan, drag-and-drop node placement from a template palette, cubic B\'{e}zier curve connection drawing, marquee multi-selection, and undo support.
 Per-node-type configuration panels allow setting system prompts, model selection, RAG parameters, condition operators, TTS voice/provider, and output variable names.
 The workflow is serialized as a JSON object containing \texttt{nodes[]} and \texttt{connections[]} arrays and persisted via the API gateway.
@@ -402,11 +375,10 @@ The workflow is serialized as a JSON object containing \texttt{nodes[]} and \tex
 \begin{figure}[h]
     \centering
     \includegraphics[width=\linewidth]{Node.png}
-    \caption{Visual Workflow Editor showing the node canvas with drag-and-drop components,connections, and the AI Model configuration panel.}
+    \caption{Visual Workflow Editor showing the node canvas with drag-and-drop components, connections, and the AI Model configuration panel.}
     \label{fig:workflow_editor}
 \end{figure}
 
-\subsubsection{Demo Console and Voice Asset Management}
 The demo console provides a chat interface for both text and voice I/O, displaying the ASR transcript in real time and playing synthesised audio with IndexedDB caching (keyed by a deterministic hash of text + voice settings) for instant replay.
 Users may upload custom voice reference audio (WAV/MP3/M4A, max 50\,MB) for Qwen3-TTS cloning; files are stored in Azure Blob Storage or the local filesystem with metadata persisted in PostgreSQL.
 
